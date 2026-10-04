@@ -9,6 +9,7 @@ Frameless, Always-on-Top floating music widget.
 import os
 import requests
 import math
+from urllib.parse import urlsplit
 from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QSize, QRectF, QTimer
 from PyQt6.QtGui import QIcon, QPixmap, QImage, QPainter, QPainterPath, QColor, QCursor, QLinearGradient
 from PyQt6.QtMultimedia import QMediaPlayer
@@ -753,13 +754,51 @@ class MusicPlayerWidget(QWidget):
 
     def _load_thumbnail(self, url: str):
         import threading
+
         def _fetch():
             try:
-                res = requests.get(url, timeout=4)
-                if res.status_code == 200:
-                    self._thumb_loaded.emit(res.content)
+                parsed = urlsplit(url)
+                host = (parsed.hostname or "").lower()
+                allowed_hosts = {
+                    "i.ytimg.com",
+                    "yt3.ggpht.com",
+                    "lh3.googleusercontent.com",
+                }
+                if (
+                    parsed.scheme.lower() != "https"
+                    or host not in allowed_hosts
+                    or parsed.port not in (None, 443)
+                ):
+                    return
+
+                max_bytes = 5 * 1024 * 1024
+                with requests.get(
+                    url,
+                    timeout=(3, 4),
+                    allow_redirects=False,
+                    stream=True,
+                ) as response:
+                    if response.status_code != 200:
+                        return
+                    if not response.headers.get("Content-Type", "").lower().startswith("image/"):
+                        return
+                    content_length = response.headers.get("Content-Length")
+                    if content_length and int(content_length) > max_bytes:
+                        return
+
+                    chunks = []
+                    total = 0
+                    for chunk in response.iter_content(chunk_size=64 * 1024):
+                        if not chunk:
+                            continue
+                        total += len(chunk)
+                        if total > max_bytes:
+                            return
+                        chunks.append(chunk)
+                    self._thumb_loaded.emit(b"".join(chunks))
             except Exception:
                 pass
+
         threading.Thread(target=_fetch, daemon=True).start()
 
     def _apply_thumbnail_bytes(self, data: bytes):

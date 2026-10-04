@@ -22,4 +22,28 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
+# Local secrets and downloader data
 .env
+.env.*
+!.env.example
+cookies.txt
+cookies*.txt
+yt-dlp.conf
+
+# Logs and downloaded media
+*.log
+*.mp3
+*.m4a
+*.wav
+*.webm
+*.mp4
+
+# Test, type-check, and build output
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/

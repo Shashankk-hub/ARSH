@@ -14,6 +14,7 @@ import logging
 import random
 import os
 import tempfile
+from urllib.parse import urlsplit
 from typing import List, Dict, Optional, Callable
 from PyQt6.QtCore import QObject, pyqtSignal, QUrl, QTimer
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
@@ -138,9 +139,19 @@ class AudioEngine(QObject):
         try:
             # Resolve pasted YouTube links directly instead of treating the URL
             # as search text. This keeps the documented link workflow usable.
-            if query.startswith(("https://", "http://")) and any(
-                host in query.lower()
-                for host in ("youtube.com/", "youtu.be/", "music.youtube.com/")
+            parsed_url = urlsplit(query)
+            allowed_video_hosts = {
+                "youtube.com",
+                "www.youtube.com",
+                "m.youtube.com",
+                "music.youtube.com",
+                "youtu.be",
+            }
+            if (
+                parsed_url.scheme.lower() == "https"
+                and parsed_url.hostname
+                and parsed_url.hostname.lower() in allowed_video_hosts
+                and parsed_url.port in (None, 443)
             ):
                 with yt_dlp.YoutubeDL({**self.ydl_opts, "skip_download": True}) as ydl:
                     item = ydl.extract_info(query, download=False)
@@ -215,7 +226,7 @@ class AudioEngine(QObject):
             return results
 
         except Exception as e:
-            logging.error(f"Search error for '{query}': {e}")
+            logging.error("Search failed (%s)", type(e).__name__)
             return []
 
     def fetch_radio_queue(self, video_id: str) -> List[TrackInfo]:
@@ -276,8 +287,8 @@ class AudioEngine(QObject):
                     return audio_path
                 logging.error("yt-dlp finished without producing an audio file for %s", video_id)
         except Exception as e:
-            logging.error("Error downloading audio for %s: %s", video_id, e)
-            self.error_occurred.emit(f"Could not load audio for track: {e}")
+            logging.error("Audio download failed (%s)", type(e).__name__)
+            self.error_occurred.emit("Could not load audio for this track.")
         return None
 
     # -----------------------------
