@@ -19,6 +19,7 @@ from PyQt6.QtCore import QObject, pyqtSignal, QUrl, QTimer
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 import yt_dlp
 from ytmusicapi import YTMusic
+from queue_logic import build_queue
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
@@ -305,13 +306,9 @@ class AudioEngine(QObject):
         if populate_radio:
             self._radio_fetch_id += 1
             self._radio_fetch_pending = False
-            fallback_queue = [
-                item for item in (fallback_tracks or [])
-                if item.video_id != track.video_id
-            ]
             # Show available search results immediately. Don't make the queue
             # wait for the YouTube Music radio endpoint to finish.
-            self.queue = [track] + fallback_queue
+            self.queue = build_queue(track, fallback_tracks=fallback_tracks)
             self.current_index = 0
             self.queue_updated.emit(self.queue)
         self.buffering_status.emit(True)
@@ -330,20 +327,20 @@ class AudioEngine(QObject):
 
                 # 2. Fetch radio recommendations if requested
                 radio_tracks = []
+                fallback_items = fallback_tracks or []
                 if populate_radio:
                     radio_tracks = self.fetch_radio_queue(track.video_id)
                     # YouTube Music's radio endpoint can be unavailable on
                     # some networks. Keep Up Next useful with search results,
                     # or find similar titles when playback started from a link.
-                    if not radio_tracks:
-                        radio_tracks = list(fallback_tracks or [])
-                        if not radio_tracks:
-                            query = f"{track.title} {track.artist}".strip()
-                            radio_tracks = self.search_tracks(query, limit=10)
-                        radio_tracks = [
-                            item for item in radio_tracks
-                            if item.video_id != track.video_id
-                        ]
+                    if not radio_tracks and not fallback_items:
+                        query = f"{track.title} {track.artist}".strip()
+                        fallback_items = self.search_tracks(query, limit=10)
+                    radio_tracks = build_queue(
+                        track,
+                        recommendations=radio_tracks,
+                        fallback_tracks=fallback_items,
+                    )[1:]
                 if self.shuffle_enabled and radio_tracks:
                     random.shuffle(radio_tracks)
 
